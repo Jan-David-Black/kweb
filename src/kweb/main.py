@@ -12,6 +12,7 @@ from starlette.routing import WebSocketRoute
 from starlette.templating import _TemplateResponse
 
 from kweb import __version__ as version
+from kweb.middleware import ProxiedHeadersMiddleware
 from kweb.server import LayoutViewServerEndpoint
 
 module_path = Path(__file__).parent.absolute()
@@ -19,6 +20,7 @@ home_path = Path.home() / ".gdsfactory" / "extra"
 home_path.mkdir(exist_ok=True, parents=True)
 
 app = FastAPI(routes=[WebSocketRoute("/gds/ws", endpoint=LayoutViewServerEndpoint)])
+app.add_middleware(ProxiedHeadersMiddleware)
 app.mount("/static", StaticFiles(directory=module_path / "static"), name="static")
 tmp = pathlib.Path(tempfile.TemporaryDirectory().name).parent / "gdsfactory"
 tmp.mkdir(exist_ok=True, parents=True)
@@ -28,6 +30,7 @@ templates = Jinja2Templates(directory=module_path / "templates")
 
 @app.get("/")
 async def root(request: Request) -> _TemplateResponse:
+    print(request.scope)
     files_root = tmp
     paths_list = glob(str(files_root / "*.gds"))
     files_list = sorted(Path(gdsfile).name for gdsfile in paths_list)
@@ -45,18 +48,29 @@ async def root(request: Request) -> _TemplateResponse:
     )
 
 
+def get_url(request: Request) -> str:
+    port_mod = ""
+    if request.url.port is not None:
+        port_mod = ":" + str(request.url.port)
+
+    hostname = request.url.hostname
+
+    if "github" in hostname:
+        port_mod = ""
+
+    url = str(
+        request.url.scheme + "://" + (hostname or "localhost") + port_mod + "/gds"
+    )
+
+    return url
+
+
 @app.get("/gds", response_class=HTMLResponse)
 async def gds_view(
     request: Request, gds_file: str, layer_props: str = str(home_path)
 ) -> _TemplateResponse:
-    url = str(
-        request.url.scheme
-        + "://"
-        + (request.url.hostname or "localhost")
-        + ":"
-        + str(request.url.port)
-        + "/gds"
-    )
+    url = get_url(request)
+
     return templates.TemplateResponse(
         "client.html",
         {
@@ -79,14 +93,7 @@ async def gds_view_static(
 ) -> _TemplateResponse:
     gds_file = (tmp / f"{gds_name}").with_suffix(".gds")
 
-    url = str(
-        request.url.scheme
-        + "://"
-        + (request.url.hostname or "localhost")
-        + ":"
-        + str(request.url.port)
-        + "/gds"
-    )
+    url = get_url(request)
 
     return templates.TemplateResponse(
         "client.html",

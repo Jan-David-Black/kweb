@@ -2,4 +2,4 @@ run:
 	uvicorn main:app --reload
 
 run_docker:
-	uvicorn main:app --reload --host 0.0.0.0
+	uvicorn main:app --reload --host 0.0.0.0 --proxy-headers --forwarded-allow-ips='*'
